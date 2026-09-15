@@ -530,7 +530,11 @@ class TokenStandardV2TransferIntegrationTest
           .output
       ) { case _: TransferInstructionResult_Completed => () }
 
-      // The reference traffic cost was recorded by running this test on Canton 3.6.0
+      // The reference traffic cost was recorded by running this test on PV=36
+      // On PV=35, the traffic costs are:
+      // 5,133 bytes in integration test, and
+      // 8,552 bytes on DevNet (14 SVs, Splice 0.8.0, 167% of the reference cost)
+      // tx: https://lighthouse.devnet.cantonloop.com/transactions/1220e05b82ba62455190c29a845272faabb45eeb02253e33a07e40079ac5ebfe4f6c
       checkTrafficCosts(
         Seq(transferTx.getUpdateId -> ExpectedTrafficCost("Preapproved CC transfer", 5152))
       )
