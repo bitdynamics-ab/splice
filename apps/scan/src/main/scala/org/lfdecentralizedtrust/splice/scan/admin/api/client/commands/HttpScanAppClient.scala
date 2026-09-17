@@ -62,6 +62,7 @@ import org.lfdecentralizedtrust.splice.util.{
   Contract,
   ContractWithState,
   DomainRecordTimeRange,
+  DsoInfo,
   FactoryChoiceWithDisclosures,
   PackageQualifiedName,
   TemplateJsonDecoder,
@@ -203,7 +204,7 @@ object HttpScanAppClient {
   }
 
   case class GetDsoInfo(headers: List[HttpHeader])
-      extends InternalBaseCommand[http.GetDsoInfoResponse, definitions.GetDsoInfoResponse] {
+      extends InternalBaseCommand[http.GetDsoInfoResponse, DsoInfo] {
 
     override def submitRequest(
         client: ScanClient,
@@ -214,7 +215,7 @@ object HttpScanAppClient {
     override def handleOk()(implicit
         decoder: TemplateJsonDecoder
     ) = { case http.GetDsoInfoResponse.OK(response) =>
-      Right(response)
+      DsoInfo.fromHttp(response)
     }
   }
 
@@ -840,15 +841,16 @@ object HttpScanAppClient {
           Codec.decode(Codec.SynchronizerId)(domain.domainId).flatMap { synchronizerId =>
             domain.sequencers
               .traverse { s =>
-                Codec.decode(Codec.Sequencer)(s.id).map { sequencerId =>
-                  DsoSequencer(
-                    s.migrationId,
-                    s.synchronizerSerial,
-                    sequencerId,
-                    s.url,
-                    s.svName,
-                    s.availableAfter.toInstant,
-                  )
+                Codec.decode(Codec.Sequencer)(s.id).flatMap { sequencerId =>
+                  s.synchronizerSerial.toRight("No serial provided").map { serial =>
+                    DsoSequencer(
+                      serial,
+                      sequencerId,
+                      s.url,
+                      s.svName,
+                      s.availableAfter.toInstant,
+                    )
+                  }
                 }
               }
               .map { sequencers =>
@@ -862,8 +864,7 @@ object HttpScanAppClient {
   final case class DomainSequencers(synchronizerId: SynchronizerId, sequencers: Seq[DsoSequencer])
 
   final case class DsoSequencer(
-      migrationId: Long,
-      serial: Option[Long],
+      serial: Long,
       id: SequencerId,
       url: String,
       svName: String,
@@ -1102,6 +1103,48 @@ object HttpScanAppClient {
       case http.GetAcsSnapshotAtV1Response.OK(value) =>
         Right(Some(value))
       case http.GetAcsSnapshotAtV1Response.NotFound(_) =>
+        Right(None)
+    }
+  }
+
+  case class GetAcsSnapshotAtV2(
+      at: java.time.OffsetDateTime,
+      migrationId: Long,
+      recordTimeMatch: Option[definitions.AcsRequestV2.RecordTimeMatch],
+      after: Option[String] = None,
+      pageSize: Int = 100,
+      partyIds: Option[Vector[PartyId]] = None,
+      templates: Option[Vector[PackageQualifiedName]] = None,
+  ) extends InternalBaseCommand[
+        http.GetAcsSnapshotAtV2Response,
+        Option[definitions.AcsResponseV2],
+      ] {
+    override def submitRequest(
+        client: ScanClient,
+        headers: List[HttpHeader],
+    ): EitherT[Future, Either[Throwable, HttpResponse], http.GetAcsSnapshotAtV2Response] =
+      client.getAcsSnapshotAtV2(
+        definitions.AcsRequestV2(
+          migrationId,
+          at,
+          recordTimeMatch,
+          after,
+          pageSize,
+          partyIds.map(_.map(_.toProtoPrimitive)),
+          templates.map(_.map(_.toString)),
+        ),
+        headers,
+      )
+
+    override protected def handleOk()(implicit
+        decoder: TemplateJsonDecoder
+    ): PartialFunction[http.GetAcsSnapshotAtV2Response, Either[
+      String,
+      Option[definitions.AcsResponseV2],
+    ]] = {
+      case http.GetAcsSnapshotAtV2Response.OK(value) =>
+        Right(Some(value))
+      case http.GetAcsSnapshotAtV2Response.NotFound(_) =>
         Right(None)
     }
   }
@@ -1510,6 +1553,25 @@ object HttpScanAppClient {
     override def handleOk()(implicit decoder: TemplateJsonDecoder) = {
       case http.GetEventHistoryResponse.OK(response) =>
         Right(response.events)
+    }
+  }
+
+  case class GetLatestEventRecordTime()
+      extends InternalBaseCommand[
+        http.GetLatestEventRecordTimeResponse,
+        Option[definitions.EventLatestRecordTimeResponse],
+      ] {
+    override def submitRequest(
+        client: http.ScanClient,
+        headers: List[HttpHeader],
+    ): EitherT[Future, Either[Throwable, HttpResponse], http.GetLatestEventRecordTimeResponse] =
+      client.getLatestEventRecordTime()
+
+    override def handleOk()(implicit decoder: TemplateJsonDecoder) = {
+      case http.GetLatestEventRecordTimeResponse.OK(response) =>
+        Right(Some(response))
+      case http.GetLatestEventRecordTimeResponse.NotFound(_) =>
+        Right(None)
     }
   }
 
@@ -3381,7 +3443,8 @@ object HttpScanAppClient {
   }
 
   case class GetBulkObjectChecksums(
-      objectKeys: Seq[String]
+      requiredCatchupTimestamp: CantonTimestamp,
+      objectKeys: Seq[String],
   ) extends InternalBaseCommand[
         http.GetBulkObjectChecksumsResponse,
         definitions.GetBulkObjectChecksumsResponse,
@@ -3391,7 +3454,10 @@ object HttpScanAppClient {
         headers: List[HttpHeader],
     ): EitherT[Future, Either[Throwable, HttpResponse], GetBulkObjectChecksumsResponse] =
       client.getBulkObjectChecksums(
-        definitions.GetBulkObjectChecksumsRequest(objectKeys.toVector),
+        definitions.GetBulkObjectChecksumsRequest(
+          requiredCatchupTimestamp.toInstant.atOffset(java.time.ZoneOffset.UTC),
+          objectKeys.toVector,
+        ),
         headers,
       )
 

@@ -20,7 +20,7 @@ import org.lfdecentralizedtrust.splice.codegen.java.da.time.types.RelTime
 import org.lfdecentralizedtrust.splice.environment.SpliceStatus
 import org.lfdecentralizedtrust.splice.http.v0.{definitions, sv_operator as http}
 import org.lfdecentralizedtrust.splice.store.VoteResultsFilters
-import org.lfdecentralizedtrust.splice.util.{Codec, Contract, TemplateJsonDecoder}
+import org.lfdecentralizedtrust.splice.util.{Codec, Contract, DsoInfo, TemplateJsonDecoder}
 import org.lfdecentralizedtrust.splice.sv.util.ValidatorOnboarding
 import com.digitalasset.canton.admin.api.client.data.NodeStatus
 import com.digitalasset.canton.daml.lf.value.json.ApiCodecCompressed
@@ -55,6 +55,21 @@ object HttpSvOperatorAppClient {
       response.unpermissions
         .traverse(req => Contract.fromHttp(ValidatorUnpermission.COMPANION)(req))
         .leftMap(_.toString)
+    }
+  }
+
+  case object GetDsoInfo extends BaseCommand[http.GetDsoInfoV1Response, DsoInfo] {
+
+    override def submitRequest(
+        client: Client,
+        headers: List[HttpHeader],
+    ): EitherT[Future, Either[Throwable, HttpResponse], http.GetDsoInfoV1Response] =
+      client.getDsoInfoV1(headers = headers)
+
+    override def handleOk()(implicit
+        decoder: TemplateJsonDecoder
+    ) = { case http.GetDsoInfoV1Response.OK(response) =>
+      DsoInfo.fromHttp(response)
     }
   }
 

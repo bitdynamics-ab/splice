@@ -16,7 +16,6 @@ import org.lfdecentralizedtrust.splice.codegen.java.splice.amuletrules.{
   AmuletRules,
   TransferPreapproval,
 }
-import org.lfdecentralizedtrust.splice.codegen.java.splice.dsorules.DsoRules
 import org.lfdecentralizedtrust.splice.codegen.java.splice.externalpartyamuletrules.{
   ExternalPartyAmuletRules,
   TransferCommandCounter,
@@ -38,7 +37,6 @@ import org.lfdecentralizedtrust.splice.http.HttpClient
 import org.lfdecentralizedtrust.splice.http.v0.definitions.{
   AnsEntry,
   GetBulkObjectChecksumsResponse,
-  GetDsoInfoResponse,
   GetRewardAccountingActivityTotalsResponse,
   GetRewardAccountingBatchResponse,
   GetRewardAccountingRootHashResponse,
@@ -73,6 +71,7 @@ import org.lfdecentralizedtrust.splice.util.{
   ChoiceContextWithDisclosures,
   Contract,
   ContractWithState,
+  DsoInfo,
   FactoryChoiceWithDisclosures,
   TemplateJsonDecoder,
 }
@@ -109,6 +108,7 @@ import org.lfdecentralizedtrust.splice.codegen.java.splice.api.token.allocationi
 import org.lfdecentralizedtrust.splice.codegen.java.splice.api.token.transferinstructionv1
 import org.lfdecentralizedtrust.splice.codegen.java.splice.api.token.transferinstructionv2
 import org.lfdecentralizedtrust.splice.codegen.java.splice.dsorules.{
+  DsoRules,
   DsoRules_CloseVoteRequestResult,
   VoteRequest,
 }
@@ -198,10 +198,19 @@ class BftScanConnection(
   override def getDsoInfo()(implicit
       ec: ExecutionContext,
       tc: TraceContext,
-  ): Future[GetDsoInfoResponse] =
+  ): Future[DsoInfo] =
     bftCall(
       _.getDsoInfo(),
       "getDsoInfo",
+    )
+
+  override def getDsoRules(
+  )(implicit
+      tc: TraceContext
+  ): Future[Contract[DsoRules.ContractId, DsoRules]] =
+    bftCall(
+      _.getDsoInfo().map(_.dsoRules.contract),
+      "getDsoRules",
     )
 
   override def getHoldingsSummaryAt(
@@ -236,12 +245,6 @@ class BftScanConnection(
       _.getAmuletRulesWithState(cachedAmuletRules),
       "getAmuletRulesWithState",
     )
-
-  override def getDsoRules(
-  )(implicit
-      tc: TraceContext
-  ): Future[Contract[DsoRules.ContractId, DsoRules]] =
-    bftCall(_.getDsoRules(), "getDsoRules")
 
   override protected def runGetExternalPartyAmuletRules(
       cachedExternalPartyAmuletRules: Option[
@@ -395,20 +398,25 @@ class BftScanConnection(
         .map(result => connection -> result)
     )
   } yield {
-    val withData = results.collect {
-      case (connection, BftScanConnection.SuccessfulResponse(Some(info))) => connection -> info
-    }.toMap
-    val withoutData = results.collect {
-      case (connection, BftScanConnection.SuccessfulResponse(None)) => connection
-    }.toSet
-    val unknownStatus = results.collect {
-      case (connection, BftScanConnection.HttpFailureResponse(_, _)) => connection
-      case (connection, BftScanConnection.ExceptionFailureResponse(_)) => connection
-    }.toSet
+    val (withData, other) =
+      results.partitionMap { case (connection, response) =>
+        response match {
+          case BftScanConnection.SuccessfulResponse(Some(info)) =>
+            Left(connection -> info)
+          case BftScanConnection.SuccessfulResponse(None) =>
+            Right(Left(connection))
+          case _: BftScanConnection.HttpFailureResponse[?] |
+              _: BftScanConnection.NonJsonHttpFailureResponse[?] |
+              _: BftScanConnection.TextFailureResponse[?] |
+              _: BftScanConnection.ExceptionFailureResponse[?] =>
+            Right(Right(connection))
+        }
+      }
+    val (withoutData, unknownStatus) = other partitionMap identity
     MigrationInfoResponses(
-      withData,
-      withoutData,
-      unknownStatus,
+      withData.toMap,
+      withoutData.toSet,
+      unknownStatus.toSet,
     )
   }
 
@@ -1161,10 +1169,11 @@ class BftScanConnection(
   }
 
   override def getBulkObjectChecksums(
-      objectKeys: Seq[String]
+      requiredCatchupTimestamp: CantonTimestamp,
+      objectKeys: Seq[String],
   )(implicit ec: ExecutionContext, tc: TraceContext): Future[GetBulkObjectChecksumsResponse] =
     bftCall(
-      _.getBulkObjectChecksums(objectKeys),
+      _.getBulkObjectChecksums(requiredCatchupTimestamp, objectKeys),
       "getBulkObjectChecksums",
       consensusFailureLogLevel = Level.DEBUG,
     )

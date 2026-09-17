@@ -469,7 +469,6 @@ class SvApp(
         }
 
       publicHandler = new HttpSvPublicHandler(
-        config.ledgerApiUser,
         svAutomation,
         dsoAutomation,
         isDevNet,
@@ -488,7 +487,6 @@ class SvApp(
           loggerFactory,
         ),
         loggerFactory,
-        initialRound,
         packageVersionSupport,
       )
 
@@ -504,6 +502,7 @@ class SvApp(
         loggerFactory,
         amuletAppParameters.upgradesConfig,
         participantAdminConnection,
+        initialRound,
       )
 
       adminHandler = new HttpSvAdminHandler(

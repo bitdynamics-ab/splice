@@ -14,6 +14,9 @@ paths:
   /status:
     $ref: "../../../../common/src/main/openapi/common-external.yaml#/paths/~1status"
   /version:
+    # Validators and SVs check this endpoint before calling any other one
+    # TODO(DACH-NY/canton-network-internal#6265): make sure this is blocked on non-DevNet once we can
+    x-external-audience: validators
     $ref: "../../../../common/src/main/openapi/common-external.yaml#/paths/~1version"
   /v0/admin/validator/onboarding/ongoing:
     get:
@@ -567,13 +570,12 @@ paths:
           $ref: "../../../../common/src/main/openapi/common-external.yaml#/components/responses/500"
         "501":
           $ref: "../../../../common/src/main/openapi/common-external.yaml#/components/responses/501"
-  /v0/dso:
+
+  /v1/dso:
     get:
       tags: [sv]
-      # TODO(DACH-NY/canton-network-internal#2106) Move to sv_operator
-      x-jvm-package: sv_public
-      x-external-audience: validators
-      operationId: "getDsoInfo"
+      x-jvm-package: sv_operator
+      operationId: "getDsoInfoV1"
       responses:
         "200":
           description: ok

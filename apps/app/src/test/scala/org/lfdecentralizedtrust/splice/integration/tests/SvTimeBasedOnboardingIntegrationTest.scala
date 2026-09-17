@@ -206,6 +206,12 @@ class SvTimeBasedOnboardingIntegrationTest
                 .payload
                 .config
                 .nextScheduledLogicalSynchronizerUpgrade,
+              sv1Backend
+                .getDsoInfo()
+                .dsoRules
+                .payload
+                .config
+                .svOperationsSwitchOverTimes,
             )
 
             val action: ActionRequiringConfirmation =

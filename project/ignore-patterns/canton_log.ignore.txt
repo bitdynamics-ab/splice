@@ -220,3 +220,7 @@ Now retrying operation 'request current time'
 .*to find ParticipantSynchronizerPermission for participant PAR::bobValidator.*
 .*code=PERMISSION_DENIED, description=Member PAR::bobValidator.*
 .*PERMISSION_DENIED/Authentication token refresh error: Member PAR::bobValidator.*
+
+# TODO(DACH-NY/cn-test-failures#9445) remove once Canton stops failing the whole
+# GetConnectedSynchronizers call for one synchronizer that is mid-reconnect.
+StateService/GetConnectedSynchronizers.*INTERNAL/Failed retrieving SynchronizerTopologyClient

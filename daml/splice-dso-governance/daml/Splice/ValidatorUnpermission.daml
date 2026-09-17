@@ -6,7 +6,8 @@ module Splice.ValidatorUnpermission where
 import Splice.Util
 import Splice.Types (ForDso(..))
 
-data ValidatorUnpermission_ArchiveResult = ValidatorUnpermission_ArchiveResult {}
+data ValidatorUnpermission_ArchiveResult = ValidatorUnpermission_ArchiveResult
+  deriving (Serializable)
 
 -- | ValidatorUnpermission contract is created to manage
 -- the validator's permissions on the synchronizer.

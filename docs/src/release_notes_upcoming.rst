@@ -7,33 +7,37 @@
 
 release-notes:: Upcoming
 
-    - Scan & SV App
+    - SV App
 
-        - The client IP used for per-client-IP HTTP rate limiting is now extracted based on a
-          configurable, ordered list of headers, ``rate-limiting.client-ip-headers``, which defaults
-          to ``["x-forwarded-for", "x-real-ip"]``. The first configured header that is present and
-          whose value parses as an IP literal is used; for comma separated values (as in
-          ``X-Forwarded-For``) the first entry is taken. Configuring an empty list disables the
-          extraction, in which case no per-client-IP rate limit is enforced.
+        - The deprecated (in 0.8.0) public ``/v0/dso`` endpoint has been removed.
+          Use the public ``/v0/dso`` endpoint in the scan app if you need to fetch DSO info without SV operator credentials.
 
-          This replaces the ``rate-limiting.trusted-client-ip-header`` and
-          ``rate-limiting.enable-client-provided-ip-headers`` options, which have been removed.
+        - Joining SVs now fetch DSO info during onboarding from a scan instance
+          (typically the sponsor's) instead of the sponsor SV app's deprecated public
+          ``/v0/dso`` endpoint. The scan is configured via the new ``.joinWithKeyOnboarding.sponsorScanUrl`` Helm value.
+          SVs who set the ``.joinWithKeyOnboarding`` key config must set it before upgrading.
 
-    - Docker
+    - Docker Compose
 
-        - Updated Docker base image to 1.0.13, which updates gRPC health probe to v0.4.55.
+        - The validator deployment can now also deploy the Canton Wallet Gateway and the Portfolio UI with the new ``-g`` flag of ``start.sh``.
 
-    - SV app
+    - Helm
 
-        - The SV app OpenAPI specification now annotates endpoints
-          (``x-jvm-package: sv_public``) with an ``x-external-audience`` extension, which is one of
-          ``validators`` (endpoints that validator operators need to reach), ``svs``
-          (endpoints that only other SVs need to reach) or ``none`` (endpoints that do not
-          need to be reachable from outside of the SV node's own deployment, e.g. the CometBFT
-          endpoints). SV operators can use this
-          annotation to restrict the external exposure of their SV app: only the endpoints of a
-          given audience need to be reachable from the corresponding networks, and endpoints with
-          an audience of ``none``, as well as endpoints without an ``x-external-audience``, do not
-          need to be exposed to external traffic at all.
-          Note that endpoints currently marked for exposure to validators will be phased out in the foreseeable future,
-          and replaced by a new limited number of endpoints which should be available only on DevNet.
+        - The deprecated `splice-domain` Helm chart has been removed.
+
+    - Scan App
+
+        - Added a new public ``/v0/events/latest-record-time`` endpoint that returns the latest
+          record time for which ``/v0/events`` will be able to return events.
+
+        - Added an automation to prune the DB tables having the temporary data used
+          by the verdict ingestion service and the traffic-based app reward calculations.
+
+          The default retention period is 1 week for this automation, after which the data will be removed from the DB.
+
+    - Validator App
+
+        - The minting-delegation reward collection for external parties now also collects
+          ``SvRewardCoupon`` rewards. An external party that is a beneficiary of SV rewards
+          will have those coupons minted on its behalf by its delegate, alongside the other
+          reward-coupon types.

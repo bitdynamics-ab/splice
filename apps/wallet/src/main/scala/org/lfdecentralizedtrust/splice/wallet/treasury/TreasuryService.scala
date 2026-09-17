@@ -4,6 +4,7 @@
 package org.lfdecentralizedtrust.splice.wallet.treasury
 
 import com.daml.ledger.javaapi.data.codegen.{Exercised, Update}
+import com.daml.metrics.api.MetricsContext
 import org.lfdecentralizedtrust.splice.codegen.java.splice
 import org.lfdecentralizedtrust.splice.codegen.java.splice.amulet as amuletCodegen
 import org.lfdecentralizedtrust.splice.codegen.java.splice.amulet.ValidatorRight
@@ -64,6 +65,7 @@ import org.lfdecentralizedtrust.splice.wallet.UserWalletManager
 import org.lfdecentralizedtrust.splice.wallet.config.TreasuryConfig
 import org.lfdecentralizedtrust.splice.wallet.metrics.TreasuryMetrics
 import org.lfdecentralizedtrust.splice.wallet.store.UserWalletStore
+import org.lfdecentralizedtrust.splice.wallet.util.DevelopmentFundCouponUtil
 import org.lfdecentralizedtrust.splice.wallet.treasury.TreasuryService.*
 import com.digitalasset.base.error.utils.ErrorDetails
 import com.digitalasset.base.error.utils.ErrorDetails.ErrorInfoDetail
@@ -201,6 +203,7 @@ class TreasuryService(
       }
       .mapAsync(1) { queuedBatch =>
         recordQueueLatencies(queuedBatch)
+        metrics.batchSize.update(queuedBatch.enqueuedAts.size)(MetricsContext.Empty)
         queuedBatch.batch match {
           case amuletBatch: AmuletOperationBatch => filterAndExecuteBatch(amuletBatch)
           case TokenStandardOperationV1Batch(operation) =>
@@ -1296,9 +1299,10 @@ class TreasuryService(
       tc: TraceContext
   ): Future[(BigDecimal, Seq[(BigDecimal, InputDevelopmentFundCoupon)])] =
     for {
-      developmentFundCouponsInputs <- userStore.listDevelopmentFundCoupons(
-        PageLimit.tryCreate(maxNumInputs)
-      )
+      allDevelopmentFundCoupons <- userStore.listDevelopmentFundCoupons()
+      developmentFundCouponsInputs = allDevelopmentFundCoupons
+        .filter(DevelopmentFundCouponUtil.isMintable(_, clock.now.toInstant))
+        .take(maxNumInputs)
       developmentFundCouponsQuantity = developmentFundCouponsInputs
         .map(coupon => scala.math.BigDecimal(coupon.payload.amount))
         .sum

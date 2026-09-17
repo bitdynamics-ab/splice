@@ -933,6 +933,7 @@ function createGrafanaAlerting(namespace: Input<string>) {
                   teamLabel: 'canton-network',
                   subtitle: 'internal SVs 5m',
                   uid: 'adlmhpz5iv4sgc',
+                  priority: monitoringConfig.alerting.enableExtraHighPrioAlerts ? 'high' : 'medium',
                 },
                 {
                   reportPublisherFormula: '=~"Digital-Asset-1|Digital-Asset-2|DA-Helm-Test-Node"',
@@ -967,19 +968,40 @@ function createGrafanaAlerting(namespace: Input<string>) {
               '$SEQUENCER_CLIENT_DELAY_THRESHOLD_SECONDS',
               monitoringConfig.alerting.alerts.sequencerClientDelay.seconds.toString()
             ),
-            'acs_commitment_alerts.yaml': readGrafanaAlertingFile('acs_commitment_alerts.yaml')
-              .replaceAll(
-                '$ACS_COMMITMENT_CHECKPOINT_DELAY_THRESHOLD_SECONDS',
-                monitoringConfig.alerting.alerts.acsCommitments.checkpointDelay.seconds.toString()
-              )
-              .replaceAll(
-                '$ACS_COMMITMENT_DELAY_THRESHOLD_SECONDS',
-                monitoringConfig.alerting.alerts.acsCommitments.completedDelay.seconds.toString()
-              )
-              .replaceAll(
-                '$ACS_COMMITMENT_COMPUTE_DURATION_THRESHOLD_SECONDS',
-                monitoringConfig.alerting.alerts.acsCommitments.computeDuration.seconds.toString()
-              ),
+            ...(monitoringConfig.alerting.alerts.acsCommitments.usePv36Metrics
+              ? {
+                  'acs_commitment_deleted_alerts.yaml': readGrafanaAlertingFile(
+                    'acs_commitment_deleted.yaml'
+                  ),
+                  'acs_commitment_pv36_alerts.yaml': readGrafanaAlertingFile(
+                    'acs_commitment_pv36_alerts.yaml'
+                  )
+                    .replaceAll(
+                      '$ACS_COMMITMENT_CHECKPOINT_DELAY_THRESHOLD_SECONDS',
+                      monitoringConfig.alerting.alerts.acsCommitments.checkpointDelay.seconds.toString()
+                    )
+                    .replaceAll(
+                      '$ACS_COMMITMENT_DELAY_THRESHOLD_SECONDS',
+                      monitoringConfig.alerting.alerts.acsCommitments.completedDelay.seconds.toString()
+                    ),
+                }
+              : {
+                  'acs_commitment_alerts.yaml': readGrafanaAlertingFile(
+                    'acs_commitment_alerts.yaml'
+                  )
+                    .replaceAll(
+                      '$ACS_COMMITMENT_CHECKPOINT_DELAY_THRESHOLD_SECONDS',
+                      monitoringConfig.alerting.alerts.acsCommitments.checkpointDelay.seconds.toString()
+                    )
+                    .replaceAll(
+                      '$ACS_COMMITMENT_DELAY_THRESHOLD_SECONDS',
+                      monitoringConfig.alerting.alerts.acsCommitments.completedDelay.seconds.toString()
+                    )
+                    .replaceAll(
+                      '$ACS_COMMITMENT_COMPUTE_DURATION_THRESHOLD_SECONDS',
+                      monitoringConfig.alerting.alerts.acsCommitments.computeDuration.seconds.toString()
+                    ),
+                }),
             'sequencer_connection_pool_alerts.yaml': readGrafanaAlertingFile(
               'sequencer_connection_pool_alerts.yaml'
             ),
@@ -1006,6 +1028,10 @@ function createGrafanaAlerting(namespace: Input<string>) {
               .replaceAll(
                 '$TPS_DROP_THRESHOLD',
                 monitoringConfig.alerting.alerts.globalSynchronizerHealth.tpsDropThreshold.toString()
+              )
+              .replaceAll(
+                '$PRIORITY',
+                monitoringConfig.alerting.enableExtraHighPrioAlerts ? 'high' : 'medium'
               ),
             'extra_k8s_alerts.yaml': readGrafanaAlertingFile('extra_k8s_alerts.yaml'),
             'sequencer_rate_limit_alerts.yaml': readGrafanaAlertingFile(
@@ -1014,6 +1040,10 @@ function createGrafanaAlerting(namespace: Input<string>) {
               .replaceAll(
                 '$SEQUENCER_RATE_LIMIT_REJECTION_RATE_THRESHOLD',
                 monitoringConfig.alerting.alerts.sequencerRateLimits.rejectionRateThreshold.toString()
+              )
+              .replaceAll(
+                '$SEQUENCER_RATE_LIMIT_REJECTION_RATE_PRIORITY',
+                monitoringConfig.alerting.enableExtraHighPrioAlerts ? 'high' : 'medium'
               )
               .replaceAll(
                 '$SEQUENCER_RATE_LIMIT_CIRCUIT_BREAKER_STATE_THRESHOLD',
@@ -1150,6 +1180,7 @@ interface AlertRulesConfig {
   uid?: RulesUID;
   ownerPrefixRegex?: string;
   maxBalanceThreshold?: string;
+  priority?: 'high' | 'medium' | 'low';
 }
 
 interface GrafanaRule {
@@ -1192,7 +1223,8 @@ function readAndSetAlertRulesGrafanaAlertingFile(file: string, rules: AlertRules
       .replaceAll('$SUB_TITLE', rule.subtitle ?? 'NOT_REPLACED')
       .replaceAll('$RULE_UID', rule.uid ?? 'NOT_REPLACED')
       .replaceAll('$OWNER_PREFIX_REGEX', rule.ownerPrefixRegex ?? 'NOT_REPLACED')
-      .replaceAll('$MAX_BALANCE_THRESHOLD', rule.maxBalanceThreshold ?? 'NOT_REPLACED');
+      .replaceAll('$MAX_BALANCE_THRESHOLD', rule.maxBalanceThreshold ?? 'NOT_REPLACED')
+      .replaceAll('$PRIORITY', rule.priority ?? 'medium');
     return yaml.load(newRuleString) as GrafanaRule;
   });
   const newFileContent = yaml.dump(content);

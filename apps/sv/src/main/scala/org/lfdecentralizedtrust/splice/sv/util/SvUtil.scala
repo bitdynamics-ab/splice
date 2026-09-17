@@ -12,8 +12,10 @@ import org.lfdecentralizedtrust.splice.codegen.java.splice.cometbft.{
 import org.lfdecentralizedtrust.splice.codegen.java.splice.dso.decentralizedsynchronizer.{
   DsoDecentralizedSynchronizerConfig,
   MediatorConfig,
+  PhysicalSynchronizerNodeConfig,
   ScanConfig,
-  SequencerConfig,
+  SequencerConnectionConfig,
+  SequencerIdentityConfig,
   SynchronizerConfig,
   SynchronizerNodeConfig,
   SynchronizerNodeConfigLimits,
@@ -21,16 +23,23 @@ import org.lfdecentralizedtrust.splice.codegen.java.splice.dso.decentralizedsync
 import org.lfdecentralizedtrust.splice.codegen.java.splice.dsorules.DsoRulesConfig
 import org.lfdecentralizedtrust.splice.codegen.java.splice.{cometbft, dso}
 import org.lfdecentralizedtrust.splice.codegen.java.da.time.types.RelTime
+import org.lfdecentralizedtrust.splice.environment.DarResources
 import org.lfdecentralizedtrust.splice.sv.{LocalSynchronizerNode, SvSynchronizerNode}
 import org.lfdecentralizedtrust.splice.sv.cometbft.CometBftNode
-import org.lfdecentralizedtrust.splice.sv.config.{BeneficiaryConfig, SvScanConfig}
+import org.lfdecentralizedtrust.splice.sv.config.{
+  BeneficiaryConfig,
+  SvScanConfig,
+  SvOnboardingConfig,
+}
 import com.digitalasset.canton.config.RequireTypes.PositiveInt
 import com.digitalasset.canton.config.{NonNegativeFiniteDuration, PositiveDurationSeconds}
+import com.digitalasset.canton.data.CantonTimestamp
 import com.digitalasset.canton.logging.TracedLogger
 import com.digitalasset.canton.protocol.AcsCommitmentsCatchUpParameters
 import com.digitalasset.canton.time.Clock
-import com.digitalasset.canton.topology.{PartyId, SynchronizerId}
+import com.digitalasset.canton.topology.{PartyId, PhysicalSynchronizerId, SynchronizerId}
 import com.digitalasset.canton.tracing.TraceContext
+import com.digitalasset.daml.lf.data.Ref.PackageVersion
 
 import java.security.interfaces.{ECPrivateKey, ECPublicKey}
 import java.security.spec.{EncodedKeySpec, PKCS8EncodedKeySpec, X509EncodedKeySpec}
@@ -146,10 +155,9 @@ object SvUtil {
   case class LocalSequencerConfig(
       sequencerId: String,
       url: String,
-      migrationId: Long,
   )
 
-  def getSequencerConfig(synchronizerNode: Option[SvSynchronizerNode], migrationId: Long)(implicit
+  def getSequencerConfig(synchronizerNode: Option[SvSynchronizerNode])(implicit
       ec: ExecutionContext,
       tc: TraceContext,
   ): Future[Option[LocalSequencerConfig]] = synchronizerNode.map { node =>
@@ -157,7 +165,6 @@ object SvUtil {
       LocalSequencerConfig(
         sequencerId.toProtoPrimitive,
         node.sequencerExternalPublicUrl,
-        migrationId,
       )
     }
   }.sequence
@@ -179,9 +186,8 @@ object SvUtil {
       cometBftNode: Option[CometBftNode],
       localSynchronizerNode: LocalSynchronizerNode,
       scanConfig: SvScanConfig,
-      synchronizerId: SynchronizerId,
+      synchronizerId: PhysicalSynchronizerId,
       clock: Clock,
-      migrationId: Long,
   )(implicit
       ec: ExecutionContext,
       tc: TraceContext,
@@ -211,12 +217,10 @@ object SvUtil {
           )
         }
         .getOrElse(SvUtil.emptyCometBftConfig)
-      localSequencerConfig <- getSequencerConfig(Some(localSynchronizerNode), migrationId)
+      localSequencerConfig <- getSequencerConfig(Some(localSynchronizerNode))
       sequencerConfig = localSequencerConfig.map(c =>
-        new SequencerConfig(
-          migrationId,
+        new SequencerIdentityConfig(
           c.sequencerId,
-          c.url,
           Some(clock.now.toInstant).toJava,
         )
       )
@@ -228,14 +232,21 @@ object SvUtil {
       )
     } yield {
       Map(
-        synchronizerId.toProtoPrimitive -> new SynchronizerNodeConfig(
+        synchronizerId.logical.toProtoPrimitive -> new SynchronizerNodeConfig(
           cometBftConfig,
-          sequencerConfig.toJava,
+          Optional.empty(),
           mediatorConfig.toJava,
           Optional.of(new ScanConfig(scanConfig.publicUrl.toString())),
           Optional.empty(),
-          Optional.empty(),
-          Optional.empty(),
+          sequencerConfig.toJava,
+          Optional.of(
+            Map(
+              java.lang.Long.valueOf(synchronizerId.serial.value.toLong) ->
+                new PhysicalSynchronizerNodeConfig(
+                  localSequencerConfig.map(c => new SequencerConnectionConfig(c.url)).toJava
+                )
+            ).asJava
+          ),
         )
       ).asJava
     }
@@ -246,24 +257,37 @@ object SvUtil {
       synchronizerId: SynchronizerId,
       voteCooldownTime: Option[NonNegativeFiniteDuration] = None,
       acsCommitmentReconciliationInterval: PositiveDurationSeconds,
-  ): DsoRulesConfig = new DsoRulesConfig(
-    10, // numUnclaimedRewardsThreshold
-    5, // numMemberTrafficContractsThreshold, arbitrarily set as 5 for now.
-    new RelTime(TimeUnit.HOURS.toMicros(1)), // actionConfirmationTimeout
-    new RelTime(TimeUnit.HOURS.toMicros(1)), // svOnboardingRequestTimeout
-    new RelTime(TimeUnit.HOURS.toMicros(1)), // svOnboardingConfirmedTimeout
-    new RelTime(TimeUnit.HOURS.toMicros(7 * 24)), // voteRequestTimeout
-    new RelTime(TimeUnit.SECONDS.toMicros(70)), // dsoDelegateInactiveTimeout
-    defaultSynchronizerNodeConfigLimits,
-    1024, // maxTextLength
-    defaultDsoDecentralizedSynchronizerConfig(
-      synchronizerId,
-      acsCommitmentReconciliationInterval,
-    ), // decentralizedSynchronizerConfig
-    Optional.empty(), // nextScheduledSynchronizerUpgrade
-    voteCooldownTime.map(t => new RelTime(t.duration.toMicros)).toJava,
-    Optional.empty(), // nextScheduledLogicalSynchronizerUpgrade
-  )
+      switchOverTimes: Option[Map[String, CantonTimestamp]],
+      packageConfig: SvOnboardingConfig.InitialPackageConfig,
+  ): DsoRulesConfig = {
+    // This runs too early to do a proper topology version check so just check the config here.
+    val supportsSwitchoverTimes = PackageVersion.assertFromString(
+      packageConfig.dsoGovernanceVersion
+    ) >= DarResources.dsoGovernance_0_1_29.metadata.version
+    new DsoRulesConfig(
+      10, // numUnclaimedRewardsThreshold
+      5, // numMemberTrafficContractsThreshold, arbitrarily set as 5 for now.
+      new RelTime(TimeUnit.HOURS.toMicros(1)), // actionConfirmationTimeout
+      new RelTime(TimeUnit.HOURS.toMicros(1)), // svOnboardingRequestTimeout
+      new RelTime(TimeUnit.HOURS.toMicros(1)), // svOnboardingConfirmedTimeout
+      new RelTime(TimeUnit.HOURS.toMicros(7 * 24)), // voteRequestTimeout
+      new RelTime(TimeUnit.SECONDS.toMicros(70)), // dsoDelegateInactiveTimeout
+      defaultSynchronizerNodeConfigLimits,
+      1024, // maxTextLength
+      defaultDsoDecentralizedSynchronizerConfig(
+        synchronizerId,
+        acsCommitmentReconciliationInterval,
+      ), // decentralizedSynchronizerConfig
+      Optional.empty(), // nextScheduledSynchronizerUpgrade
+      voteCooldownTime.map(t => new RelTime(t.duration.toMicros)).toJava,
+      Optional.empty(), // nextScheduledLogicalSynchronizerUpgrade
+      // We silently drop all switchover values when switchover is not supported as making it an error doesn't work well with setting it as the default.
+      switchOverTimes
+        .map(_.view.mapValues(_.toInstant).toMap.asJava)
+        .filter(_ => supportsSwitchoverTimes)
+        .toJava,
+    )
+  }
 
   def keyPairMatches(
       publicKeyBase64: String,

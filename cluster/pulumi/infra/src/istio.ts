@@ -10,6 +10,7 @@ import {
 import { cometBFTExternalPort } from '@canton-network/splice-pulumi-common-sv/src/synchronizer/cometbftConfig';
 import { rateLimitResponseHeaders } from '@canton-network/splice-pulumi-common/src/ratelimit/rateLimitHeaders';
 import { mergeWith } from 'lodash';
+import { z } from 'zod';
 
 import {
   CLUSTER_HOSTNAME,
@@ -24,7 +25,7 @@ import {
   isDevNet,
   isMainNet,
 } from '../../common';
-import { clusterBasename, infraConfig } from './config';
+import { clusterBasename, flowControlConfigSchema, infraConfig } from './config';
 import { configureIstioGatewayPolicies, installAppWhitelisting } from './whitelisting';
 import { loadInternalWhitelistedIps, loadIPRanges } from './whitelisting/ipRanges';
 import { configurePublicInfo } from './whitelisting/publicInfo';
@@ -60,7 +61,7 @@ function configureIstioBase(
       version: istioVersion.istio,
       namespace: ns.metadata.name,
       repositoryOpts: {
-        repo: 'https://istio-release.storage.googleapis.com/charts',
+        repo: 'https://blob.istio.io/istio-release/charts',
       },
       values: {
         global: {
@@ -121,6 +122,10 @@ function configureIstiod(
         requested_server_name: '%REQUESTED_SERVER_NAME%',
         response_code: '%RESPONSE_CODE%',
         response_code_details: '%RESPONSE_CODE_DETAILS%',
+        // gRPC calls always end with HTTP 200, the outcome is in the gRPC status: a rate limited
+        // call is reported as `ResourceExhausted` (see `rate_limited_as_resource_exhausted`),
+        // whereas a rate limited HTTP request is reported as response_code 429
+        grpc_status: '%GRPC_STATUS(CAMEL_STRING)%',
         response_flags: '%RESPONSE_FLAGS%',
         start_time: '%START_TIME%',
         upstream_cluster: '%UPSTREAM_CLUSTER%',
@@ -129,7 +134,18 @@ function configureIstiod(
         upstream_service_time: '%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%',
         user_agent: '%REQ(USER-AGENT)%',
         x_forwarded_for: '%REQ(X-FORWARDED-FOR)%',
+        // the trusted client IP as determined by envoy (based on numTrustedProxies),
+        // this is the header the apps use for per-client-IP rate limiting
+        envoy_external_address: '%REQ(X-ENVOY-EXTERNAL-ADDRESS)%',
+        // The address the per-client-IP rate limit buckets are keyed on: envoy's
+        // `masked_remote_address` action masks the downstream remote address (the trusted,
+        // XFF-derived client address) with the configured prefix length, which is /32 for
+        // IPv4 and /128 for IPv6, i.e. the full address without the port.
+        masked_remote_address: '%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%',
         // rate limiting fields, will show up in sidecar access logging
+        // the value identifies the limit that rejected the request: `global`, `per_ip`,
+        // `endpoint` or `endpoint_per_ip`, i.e. the same names as the `limiter` label on the
+        // envoy_http_local_rate_limit_* metrics, which cannot attribute a single request to a limit
         local_rate_limited: '%RESP(x-local-rate-limit)%',
         rate_limit_limit: '%RESP(x-ratelimit-limit)%',
         rate_limit_remaining: '%RESP(x-ratelimit-remaining)%',
@@ -186,7 +202,7 @@ function configureIstiod(
       version: istioVersion.istio,
       namespace: ingressNs.metadata.name,
       repositoryOpts: {
-        repo: 'https://istio-release.storage.googleapis.com/charts',
+        repo: 'https://blob.istio.io/istio-release/charts',
       },
       values: mergeWith(
         defaultValues,
@@ -208,14 +224,16 @@ type IngressPort = {
   port: number;
   targetPort: number;
   protocol: string;
+  appProtocol?: string;
 };
 
-function ingressPort(name: string, port: number): IngressPort {
+function ingressPort(name: string, port: number, appProtocol?: string): IngressPort {
   return {
     name: name,
     port: port,
     targetPort: port,
     protocol: 'TCP',
+    ...(appProtocol ? { appProtocol } : {}),
   };
 }
 
@@ -239,7 +257,8 @@ Changes that do not improve things at all:
 function configureInternalGatewayService(
   ingressNs: k8s.core.v1.Namespace,
   ingress: { ip: pulumi.Output<string>; viaGKEL7: false } | { viaGKEL7: true },
-  istiod: k8s.helm.v3.Release
+  istiod: k8s.helm.v3.Release,
+  extraDependencies: pulumi.Resource[] = []
 ) {
   const cluster = gcp.container.getCluster({
     name: CLUSTER_NAME,
@@ -286,7 +305,8 @@ function configureInternalGatewayService(
       ingressPort('sw-lg-gw', 6201),
     ],
     istiod,
-    ''
+    '',
+    extraDependencies
   );
 }
 
@@ -342,7 +362,8 @@ function configureGatewayService(
   gatewayVariant: IstioGatewayVariant,
   ingressPorts: IngressPort[],
   istiod: k8s.helm.v3.Release,
-  suffix: string
+  suffix: string,
+  extraDependencies: pulumi.Resource[] = []
 ) {
   // We limit source IPs in two ways:
   // - For most traffic, we use istio instead of through loadBalancerSourceRanges as the latter has a size limit.
@@ -353,7 +374,7 @@ function configureGatewayService(
   //   These IPs should be provided in externalIPRangesInLB.
   const istioPolicies = configureIstioGatewayPolicies(ingressNs, externalIPRangesInIstio, suffix);
 
-  const { serviceValues, deploymentValues } =
+  const { serviceValues, deploymentValues, port80Protocol } =
     gatewayVariant.type === 'LoadBalancer'
       ? {
           serviceValues: {
@@ -367,6 +388,7 @@ function configureGatewayService(
             externalTrafficPolicy: 'Local',
           },
           deploymentValues: {},
+          port80Protocol: undefined,
         }
       : {
           // Create a ClusterIP Service for the istio ingress so the GKE L7 Gateway can
@@ -383,6 +405,9 @@ function configureGatewayService(
               }),
             },
           },
+          // force HTTP/2 (h2c) between GKE L7 Gateway and istio-ingress for
+          // gRPC routes
+          port80Protocol: 'kubernetes.io/h2c',
         };
 
   const gateway = new k8s.helm.v3.Release(
@@ -393,7 +418,7 @@ function configureGatewayService(
       version: istioVersion.istio,
       namespace: ingressNs.metadata.name,
       repositoryOpts: {
-        repo: 'https://istio-release.storage.googleapis.com/charts',
+        repo: 'https://blob.istio.io/istio-release/charts',
       },
       values: {
         resources: {
@@ -417,7 +442,7 @@ function configureGatewayService(
           ...serviceValues,
           ports: [
             ingressPort('status-port', 15021), // istio default
-            ingressPort('http2', 80),
+            ingressPort('http2', 80, port80Protocol),
             ingressPort('https', 443),
           ].concat(ingressPorts),
         },
@@ -437,7 +462,7 @@ function configureGatewayService(
             const base: pulumi.Resource[] = [ingressNs, istiod];
             return base.concat(policies);
           })
-        : [ingressNs, istiod],
+        : [ingressNs, istiod, ...extraDependencies],
     }
   );
   if (infraConfig.istio.enableIngressAccessLogging) {
@@ -506,29 +531,18 @@ function configureGateway(
             },
             ...(withSeparateGcpGateway ? {} : { tls: { httpsRedirect: true } }),
           },
-          withSeparateGcpGateway
-            ? {
-                hosts,
-                // our VirtualServices charts hardcode 443 as port match on http;
-                // without this you get 403 route_not_found in istio
-                port: {
-                  name: 'http-on-443',
-                  number: 443,
-                  protocol: 'HTTP',
-                },
-              }
-            : {
-                hosts,
-                port: {
-                  name: 'https',
-                  number: 443,
-                  protocol: 'HTTPS',
-                },
-                tls: {
-                  mode: 'SIMPLE',
-                  credentialName: `cn-${clusterBasename}net-tls`,
-                },
-              },
+          {
+            hosts,
+            port: {
+              name: 'https',
+              number: 443,
+              protocol: 'HTTPS',
+            },
+            tls: {
+              mode: 'SIMPLE',
+              credentialName: `cn-${clusterBasename}net-tls`,
+            },
+          },
         ],
       },
     },
@@ -606,6 +620,12 @@ function configureDocsAndReleases(
                 prefix: '/cn-release-bundles',
               },
             },
+            {
+              port: 80,
+              uri: {
+                prefix: '/cn-release-bundles',
+              },
+            },
           ],
           route: [
             {
@@ -640,6 +660,9 @@ function configureDocsAndReleases(
               match: [
                 {
                   port: 443,
+                },
+                {
+                  port: 80,
                 },
               ],
               route: [
@@ -715,10 +738,6 @@ function configureSequencerHighPerformanceGrpcDestinationRule(
   });
 }
 
-// Ports of the http2 servers that we apply the upstream flow control config to:
-// the sequencer public API and the sequencer BFT P2P API.
-const sequencerFlowControlUpstreamPorts = [5008, 5010];
-
 // Istio proxies lots of client connections over relatively few connections. If one of the client connections gets stuck
 // (e.g. because the client died) buffers will fill up and eventually istio will stop sending connection-level window updates
 // to the sequencer and trigger netty flow control. This surfaces as requests that send back response headers but then nothing else until the client times out.
@@ -731,17 +750,16 @@ const sequencerFlowControlUpstreamPorts = [5008, 5010];
 function configureSequencerFlowControl(
   ingressNs: k8s.core.v1.Namespace
 ): k8s.apiextensions.CustomResource {
-  const http2ProtocolOptions = {
-    initial_stream_window_size: infraConfig.istio.sequencerFlowControl.initialStreamWindowSize,
-    initial_connection_window_size:
-      infraConfig.istio.sequencerFlowControl.initialConnectionWindowSize,
+  const http2ProtocolOptions = (config: z.infer<typeof flowControlConfigSchema>) => ({
+    initial_stream_window_size: config.initialStreamWindowSize,
+    initial_connection_window_size: config.initialConnectionWindowSize,
     connection_keepalive: {
       interval: '30s',
       timeout: '5s',
     },
-  };
-  // istio -> upstream (aka sequencer)
-  const upstreamPatch = (portNumber: number) => ({
+  });
+  // istio sidecar of upstream -> upstream (e.g. sequencer)
+  const upstreamPatch = (portNumber: number, config: z.infer<typeof flowControlConfigSchema>) => ({
     applyTo: 'CLUSTER',
     match: {
       cluster: {
@@ -758,7 +776,7 @@ function configureSequencerFlowControl(
             '@type': 'type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions',
             use_downstream_protocol_config: {
               http_protocol_options: {},
-              http2_protocol_options: http2ProtocolOptions,
+              http2_protocol_options: http2ProtocolOptions(config),
             },
           },
         },
@@ -769,13 +787,13 @@ function configureSequencerFlowControl(
     apiVersion: 'networking.istio.io/v1alpha3',
     kind: 'EnvoyFilter',
     metadata: {
-      name: 'sequencer-flow-control',
+      name: 'flow-control',
       namespace: ingressNs.metadata.name,
     },
     spec: {
       configPatches: [
         {
-          // downstream (aka participant) -> istio
+          // downstream client (e.g. participant) -> istio sidecar of upstream (e.g. sequencer)
           applyTo: 'NETWORK_FILTER',
           match: {
             context: 'SIDECAR_INBOUND',
@@ -793,12 +811,20 @@ function configureSequencerFlowControl(
               typed_config: {
                 '@type':
                   'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
-                http2_protocol_options: http2ProtocolOptions,
+                // This applies to both internal and public so we apply the more conservative internal limit
+                http2_protocol_options: http2ProtocolOptions(
+                  infraConfig.istio.flowControl.internal
+                ),
               },
             },
           },
         },
-        ...sequencerFlowControlUpstreamPorts.map(upstreamPatch),
+        ...infraConfig.istio.flowControl.public.ports.map(p =>
+          upstreamPatch(p, infraConfig.istio.flowControl.public)
+        ),
+        ...infraConfig.istio.flowControl.internal.ports.map(p =>
+          upstreamPatch(p, infraConfig.istio.flowControl.internal)
+        ),
       ],
     },
   });
@@ -850,7 +876,8 @@ export function configureIstio(
   ingressNs: ExactNamespace,
   ingressIp: pulumi.Output<string>,
   cometBftIngressIp: pulumi.Output<string>,
-  expectGKEL7Gateway: boolean
+  expectGKEL7Gateway: boolean,
+  extraIngressDependencies: pulumi.Resource[] = []
 ): ConfiguredIstio {
   const nsName = 'istio-system';
   const istioSystemNs = new k8s.core.v1.Namespace(nsName, {
@@ -863,7 +890,8 @@ export function configureIstio(
   const gwSvc = configureInternalGatewayService(
     ingressNs.ns,
     expectGKEL7Gateway ? { viaGKEL7: true } : { viaGKEL7: false, ip: ingressIp },
-    istiod
+    istiod,
+    extraIngressDependencies
   );
   const cometBftSvc = DecentralizedSynchronizerUpgradeConfig.usesCometbft()
     ? configureCometBFTGatewayService(ingressNs.ns, cometBftIngressIp, istiod)

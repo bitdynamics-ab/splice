@@ -349,6 +349,7 @@ object SpliceUtil {
     Optional.empty(), // nextScheduledSynchronizerUpgrade
     Optional.empty(), // voteCooldownTime
     Optional.empty(), // nextScheduledLogicalSynchronizerUpgrade
+    Optional.empty(), // svOperationsSwitchOverTimes
   )
 
   def defaultAmuletConfig(
@@ -400,6 +401,12 @@ object SpliceUtil {
         .toJava,
       initialRewardConfig.toJava,
       // transferPreapprovalBaseDuration
+      Optional.empty(),
+      // developmentFundManagerBlacklist
+      Optional.empty(),
+      // minDevelopmentFundMintingDelay
+      Optional.empty(),
+      // amuletSwitchOverTimes
       Optional.empty(),
     )
 

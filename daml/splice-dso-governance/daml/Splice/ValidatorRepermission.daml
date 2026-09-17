@@ -6,7 +6,8 @@ module Splice.ValidatorRepermission where
 import Splice.Util
 import Splice.Types (ForDso(..))
 
-data ValidatorRepermission_ArchiveResult = ValidatorRepermission_ArchiveResult {}
+data ValidatorRepermission_ArchiveResult = ValidatorRepermission_ArchiveResult
+  deriving (Serializable)
 
 
 -- | ValidatorRepermission contract is created to
