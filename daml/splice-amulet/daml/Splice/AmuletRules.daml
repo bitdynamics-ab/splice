@@ -311,26 +311,12 @@ template AmuletRules
           Left failureStatus -> failWithStatus failureStatus
           Right _ -> pure ()
         (trafficCostAmulet, trafficCostUsd) <- computeSynchronizerFees dso provider trafficAmount this context
-        (transferResult, meta) <- splitAndBurn (toInterfaceContractId self) provider trafficCostAmulet inputs context dso
-          (getDevelopmentFundManagerBlacklist configUsd) "traffic purchase"
-        -- create a new MemberTraffic contract for the purchased traffic
-        purchasedTraffic <- create MemberTraffic with
-          dso
-          memberId
-          synchronizerId
-          migrationId
-          totalPurchased = trafficAmount
-          numPurchases = 1
-          amuletSpent = trafficCostAmulet
-          usdSpent =  trafficCostUsd
-        -- return result
-        return AmuletRules_BuyMemberTrafficResult with
-          round = transferResult.round
-          summary = transferResult.summary
-          amuletPaid = trafficCostAmulet
-          purchasedTraffic
-          senderChangeAmulet = transferResult.senderChangeAmulet
-          meta = Some meta
+        let eventLogCid = toInterfaceContractId self
+        let trafficPurchaseTransfer = splitAndBurnTransfer provider trafficCostAmulet inputs "traffic purchase"
+        contextSummary <- summarizeAndValidateContext eventLogCid context dso
+          (getDevelopmentFundManagerBlacklist configUsd) trafficPurchaseTransfer
+        buyMemberTraffic eventLogCid contextSummary provider trafficCostAmulet trafficCostUsd inputs
+          memberId synchronizerId migrationId trafficAmount
 
 
     nonconsuming choice AmuletRules_MergeMemberTrafficContracts : AmuletRules_MergeMemberTrafficContractsResult
@@ -1030,6 +1016,7 @@ template AmuletRules
           -- but ExternalPartyConfigState still advances. Not super relevant in practice but better to be safe.
           holdingFeesOpenRoundNumber = validatedRounds.oldestRound.round
           amuletPrice = validatedRounds.latestUsableRound.amuletPrice
+          trafficPrice = fromOptional config.decentralizedSynchronizer.fees.extraTrafficPrice validatedRounds.latestUsableRound.trafficPrice
           transferConfig = transferConfigToTransferConfigV2 validatedRounds.latestUsableRound.transferConfigUsd
           rewardCalculationVersion = (.mintingVersion) <$> validatedRounds.latestUsableRound.rewardConfig
           amuletSwitchOverTimes = config.amuletSwitchOverTimes
@@ -2276,25 +2263,42 @@ computeTransferPreapprovalFee duration amuletConfig context dso = do
   let feeAmulet = feeUsd / contextMiningRound.amuletPrice
   pure (feeAmulet, feeUsd)
 
+splitAndBurnTransfer : Party -> Decimal -> [TransferInput] -> Text -> Transfer
+splitAndBurnTransfer sender amount inputs usage = Transfer with
+  sender
+  provider = sender
+  inputs
+  outputs =
+    [ TransferOutput with
+        receiver = sender
+        receiverFeeRatio = 0.0
+        amount
+        lock = None
+        meta = Some (reasonToMeta ("split for " <> usage) emptyMetadata)
+    ]
+  beneficiaries = None
+
 splitAndBurn : ContractId TransferEventsV2.EventLog -> Party -> Decimal -> [TransferInput] -> TransferContext -> Party -> [Party] -> Text -> Update (TransferResult, Metadata)
 splitAndBurn eventLogCid sender amount inputs context dso developmentFundManagerBlacklist usage = do
--- do not create activity records as part of the transfer. We create a validator activity record for the full burn below.
+  let transfer = splitAndBurnTransfer sender amount inputs usage
+  contextSummary <- summarizeAndValidateContext eventLogCid context dso developmentFundManagerBlacklist transfer
+  splitAndBurnWithSummary eventLogCid contextSummary amount usage transfer
+
+splitAndBurnWithSummary
+  : ContractId TransferEventsV2.EventLog
+  -> TransferContextSummaryV2
+  -> Decimal
+  -> Text
+  -> Transfer
+  -> Update (TransferResult, Metadata)
+splitAndBurnWithSummary eventLogCid contextSummary amount usage transfer = do
+  let dso = contextSummary.dso
+  -- Must suppress normal activity records because the full burn earns one validator activity reward below.
   let rewardsConfig = RewardsIssuanceConfig with
         issueAppRewards = False
         issueValidatorRewards = False
-  transferResult <- executeTransfer eventLogCid rewardsConfig context dso developmentFundManagerBlacklist Transfer with
-    sender
-    provider = sender
-    inputs
-    outputs =
-      [ TransferOutput with
-          receiver = sender
-          receiverFeeRatio = 0.0
-          amount
-          lock = None
-          meta = Some (reasonToMeta ("split for " <> usage) emptyMetadata)
-      ]
-    beneficiaries = None -- No beneficiaries for self-transfer
+  transferResult <- executeTransfer' rewardsConfig contextSummary dso transfer
+  let sender = transfer.sender
   let [TransferResultAmulet amuletCid] = transferResult.createdAmulets
   -- burn the split amulet containing the fee amount
   amulet <- fetchAndArchive (ForOwner with dso; owner = sender) amuletCid
@@ -2320,6 +2324,38 @@ splitAndBurn eventLogCid sender amount inputs context dso developmentFundManager
   let meta = simpleHoldingTxMeta TxKind_Burn (Some usage) (Some burnAmount) <>
              fromOptional mempty transferResult.meta -- overwrite so we keep the reward input metadata
   pure (result, meta)
+
+buyMemberTraffic
+  : ContractId TransferEventsV2.EventLog
+  -> TransferContextSummaryV2
+  -> Party
+  -> Decimal
+  -> Decimal
+  -> [TransferInput]
+  -> Text
+  -> Text
+  -> Int
+  -> Int
+  -> Update AmuletRules_BuyMemberTrafficResult
+buyMemberTraffic eventLogCid contextSummary provider trafficCostAmulet trafficCostUsd inputs memberId synchronizerId migrationId trafficAmount = do
+  let transfer = splitAndBurnTransfer provider trafficCostAmulet inputs "traffic purchase"
+  (transferResult, meta) <- splitAndBurnWithSummary eventLogCid contextSummary trafficCostAmulet "traffic purchase" transfer
+  purchasedTraffic <- create MemberTraffic with
+    dso = contextSummary.dso
+    memberId
+    synchronizerId
+    migrationId
+    totalPurchased = trafficAmount
+    numPurchases = 1
+    amuletSpent = trafficCostAmulet
+    usdSpent = trafficCostUsd
+  pure AmuletRules_BuyMemberTrafficResult with
+    round = transferResult.round
+    summary = transferResult.summary
+    amuletPaid = trafficCostAmulet
+    purchasedTraffic
+    senderChangeAmulet = transferResult.senderChangeAmulet
+    meta = Some meta
 
 -- | Compute the total burn done as part of the transfer.
 totalBurnFromSummary : TransferSummary -> Decimal
@@ -2399,6 +2435,7 @@ bootstrapExternalPartyConfigState AmuletRules{..} openMiningRoundTriple = do
         targetArchiveAfter = now `addRelTime` getExternalPartyConfigStateTickDuration config
         holdingFeesOpenRoundNumber = validatedRounds.oldestRound.round
         amuletPrice = validatedRounds.latestUsableRound.amuletPrice
+        trafficPrice = fromOptional config.decentralizedSynchronizer.fees.extraTrafficPrice validatedRounds.latestUsableRound.trafficPrice
         transferConfig = transferConfig
         rewardCalculationVersion = (.mintingVersion) <$> validatedRounds.latestUsableRound.rewardConfig
         amuletSwitchOverTimes = config.amuletSwitchOverTimes

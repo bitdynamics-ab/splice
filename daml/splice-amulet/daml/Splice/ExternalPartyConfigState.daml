@@ -26,6 +26,7 @@ template ExternalPartyConfigState
     dso : Party
     holdingFeesOpenRoundNumber : Round -- ^ The round number to use for charging holding fees for newly created contracts.
     amuletPrice : Decimal -- ^ Amulet price at the time the config state was created.
+    trafficPrice : Decimal -- ^ Traffic price in USD per MB at the time the config state was created.
     transferConfig : TransferConfigV2 Unit.USD -- ^ Transfer config at the time the config state was created.
     targetArchiveAfter : Time -- ^ Lower bound on the time the contract gets archived, not enforced as a strict upper bound.
     rewardCalculationVersion : Optional RewardVersion -- ^ The reward calculation version to use for transactions relying on this config state.

@@ -8,6 +8,7 @@ import DA.Action
 import DA.Assert
 import DA.Foldable (forA_)
 import DA.Optional
+import DA.Text qualified as T
 import qualified DA.TextMap as TextMap
 import DA.Time
 
@@ -338,6 +339,41 @@ data TransferCommand_ExpireResult = TransferCommand_ExpireResult
 -- Token standard transfer factory
 ----------------------------------
 
+data TrafficPurchaseParameters = TrafficPurchaseParameters with
+    memberId : Text
+    synchronizerId : Text
+    migrationId : Int
+    trafficAmount : Int
+  deriving (Eq, Show)
+
+trafficPurchaseReceiver : Party
+trafficPurchaseReceiver = fromSome $ partyFromText
+  "cip-xxx_traffic-purchase::1220000000000000000000000000000000000000000000000000000000000000abcd"
+
+parseTrafficPurchaseParameters : Metadata -> Either Text TrafficPurchaseParameters
+parseTrafficPurchaseParameters meta = do
+  memo <- case TextMap.lookup reasonMetaKey meta.values of
+    None -> Left $ "Missing traffic purchase memo in metadata key " <> reasonMetaKey
+    Some value -> Right value
+  parameters <- TextMap.fromList <$> mapA parseParameter (T.splitOn "&" memo)
+  memberId <- getParameter "memberId" parameters
+  synchronizerId <- getParameter "synchronizerId" parameters
+  migrationId <- getIntParameter "migrationId" parameters
+  trafficAmount <- getIntParameter "trafficAmount" parameters
+  pure TrafficPurchaseParameters with ..
+  where
+    parseParameter parameter = case T.splitOn "=" parameter of
+      [name, value] | not (T.isEmpty name) && not (T.isEmpty value) -> Right (name, value)
+      _ -> Left $ "Invalid traffic purchase memo parameter: " <> show parameter
+    getParameter name parameters = case TextMap.lookup name parameters of
+      None -> Left $ "Missing traffic purchase memo parameter: " <> name
+      Some value -> Right value
+    getIntParameter name parameters = do
+      value <- getParameter name parameters
+      case T.parseInt value of
+        None -> Left $ "Invalid integer traffic purchase memo parameter " <> name <> ": " <> show value
+        Some parsed -> Right parsed
+
 amulet_transferFactoryV1_transferImpl
   : ExternalPartyAmuletRules
   -> [Party]
@@ -368,7 +404,7 @@ amulet_transferFactoryV1_transferImpl this actors arg = do
   assertDeadlineExceeded "transfer.requestedAt" transfer.requestedAt
   -- executeBefore: must be in the future, but not too far
   assertWithinDeadline "transfer.executeBefore" transfer.executeBefore
-  (_, configState) <- getExternalPartyConfigStateFromChoiceContext dso arg.extraArgs.context
+  (configStateCid, configState) <- getExternalPartyConfigStateFromChoiceContext dso arg.extraArgs.context
   let configAmulet = transferConfigAmuletFromExternalPartyConfigState configState
   let transferLifetime = transfer.executeBefore `subTime` transfer.requestedAt
   require' ("transferLifetime", transferLifetime) isLessOrEqualR
@@ -379,7 +415,25 @@ amulet_transferFactoryV1_transferImpl this actors arg = do
   ensureNoAccountMeta "transfer" "sender" transfer.meta
   ensureNoAccountMeta "transfer" "receiver" transfer.meta
 
-  case optPreapprovalCid of
+  if transfer.receiver == trafficPurchaseReceiver
+  then do
+    -- TODO: Dedicated synchronizers need separate routing because this factory represents the global synchronizer.
+    TrafficPurchaseParameters{..} <- either fail pure $ parseTrafficPurchaseParameters transfer.meta
+    let trafficCostUsd = intToDecimal trafficAmount / 1e6 * configState.trafficPrice
+    let trafficCostAmulet = trafficCostUsd / configState.amuletPrice
+    requireMatchExpected ("transfer.amount", transfer.amount) trafficCostAmulet
+    paymentContext <- unfeaturedPaymentContextFromChoiceContext dso extraArgs.context
+    inputs <- holdingToTransferInputs (ForOwner with dso; owner = transfer.sender) transfer.inputHoldingCids
+    let trafficPurchaseTransfer = splitAndBurnTransfer transfer.sender trafficCostAmulet inputs "traffic purchase"
+    contextSummary <- summarizeAndValidateExternalPartyContext paymentContext dso trafficPurchaseTransfer
+    result <- buyMemberTraffic (toInterfaceContractId configStateCid) contextSummary transfer.sender
+      trafficCostAmulet trafficCostUsd inputs memberId synchronizerId migrationId trafficAmount
+    pure Api.Token.TransferInstructionV1.TransferInstructionResult with
+      senderChangeCids = toInterfaceContractId <$> optionalToList result.senderChangeAmulet
+      output = Api.Token.TransferInstructionV1.TransferInstructionResult_Completed with
+        receiverHoldingCids = []
+      meta = fromOptional emptyMetadata result.meta
+  else case optPreapprovalCid of
     _ | transfer.receiver `elem` actors -> do
       -- self-transfer or sender+receiver authorized
       paymentContext <- unfeaturedPaymentContextFromChoiceContext dso arg.extraArgs.context
