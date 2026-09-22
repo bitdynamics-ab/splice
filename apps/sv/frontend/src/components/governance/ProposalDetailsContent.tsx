@@ -58,6 +58,7 @@ import {
   VOTE_REASON_SUMMARY_LABEL,
   VOTE_REASON_URL_LABEL,
 } from '../../utils/constants';
+import { formatDatetimeWithOffset } from '../../utils/dateFormat';
 
 /** True when a proposal changed fields that are locked/disabled in the create UI (e.g. emergency API). */
 export function hasAlteredDisabledFields(changes: ConfigChange[]): boolean {
@@ -388,7 +389,7 @@ export const ProposalDetailsContent: React.FC<ProposalDetailsContentProps> = pro
 
           <DetailItem
             label={PROPOSAL_CREATED_LABEL}
-            value={proposalDetails.createdAt}
+            value={formatDatetimeWithOffset(proposalDetails.createdAt)}
             labelId="proposal-details-created-at-label"
             valueId="proposal-details-created-at-value"
           />
@@ -402,7 +403,7 @@ export const ProposalDetailsContent: React.FC<ProposalDetailsContentProps> = pro
                   {dayjs(votingInformation.votingThresholdDeadline).fromNow()}
                 </Box>
                 <Box data-testid="proposal-details-voting-closes-value">
-                  {votingInformation.votingThresholdDeadline}
+                  {formatDatetimeWithOffset(votingInformation.votingThresholdDeadline)}
                 </Box>
               </Stack>
             }
@@ -421,7 +422,7 @@ export const ProposalDetailsContent: React.FC<ProposalDetailsContentProps> = pro
                 </Box>
                 {votingInformation.voteTakesEffect !== 'Threshold' && (
                   <Box data-testid="proposal-details-vote-takes-effect-value">
-                    {votingInformation.voteTakesEffect}
+                    {formatDatetimeWithOffset(votingInformation.voteTakesEffect)}
                   </Box>
                 )}
               </Stack>

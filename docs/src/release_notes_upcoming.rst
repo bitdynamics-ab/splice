@@ -20,6 +20,10 @@ release-notes:: Upcoming
     - Docker Compose
 
         - The validator deployment can now also deploy the Canton Wallet Gateway and the Portfolio UI with the new ``-g`` flag of ``start.sh``.
+          This requires ``LEDGER_API_AUTH_AUDIENCE`` and ``VALIDATOR_AUTH_AUDIENCE`` in ``.env`` to be equal, and with ``-a`` an OAuth app for the Wallet Gateway UI set as ``WALLET_GATEWAY_UI_CLIENT_ID``,
+          see `Wallet Gateway and Splice Portfolio <https://docs.canton.network/global-synchronizer/deployment/validator-docker-compose#wallet-gateway-and-splice-portfolio>`__.
+
+          .. important:: From Splice 0.10.0 the Wallet Gateway will be deployed by default, so an ``.env`` with different audiences will no longer start. Enabling it with ``-g`` now prepares your deployment for that.
 
     - Helm
 
@@ -41,3 +45,14 @@ release-notes:: Upcoming
           ``SvRewardCoupon`` rewards. An external party that is a beneficiary of SV rewards
           will have those coupons minted on its behalf by its delegate, alongside the other
           reward-coupon types.
+
+    - SV UI
+
+        - The ``AmuletRules_SetConfig`` proposal form can now set ``amuletSwitchOverTimes``.
+
+        - The ``DsoRulesConfig`` proposal form can now set ``svOperationsSwitchOverTimes``.
+
+    - Daml
+
+        - Fix a bug in MintingDelegation that wrongly allowed the delegate to share their own coupons within a minting delegation.
+
