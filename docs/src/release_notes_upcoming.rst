@@ -63,7 +63,7 @@ release-notes:: Upcoming
           The transfer ``amount`` is the most amulet the sender is willing to burn; if the traffic costs more,
           the transfer fails with ``splice.lfdecentralizedtrust.org/traffic-cost-exceeds-amount``.
 
-        - Added three new fields: ``trafficPrice``, ``requiredSynchronizers`` and
+        - Added three new fields: ``trafficPrice``, ``supportedSynchronizerIds`` and
           ``minTrafficTopupAmount`` to ``ExternalPartyConfigState``. 
 
           .. important::
