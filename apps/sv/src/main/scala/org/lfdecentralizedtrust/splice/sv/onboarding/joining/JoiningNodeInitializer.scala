@@ -63,7 +63,12 @@ import org.lfdecentralizedtrust.splice.sv.onboarding.SynchronizerNodeReconciler.
 }
 import org.lfdecentralizedtrust.splice.sv.store.{SvDsoStore, SvStore, SvSvStore}
 import org.lfdecentralizedtrust.splice.sv.util.{SvOnboardingToken, SvUtil}
-import org.lfdecentralizedtrust.splice.util.{Contract, PackageVetting, TemplateJsonDecoder}
+import org.lfdecentralizedtrust.splice.util.{
+  Contract,
+  PackageVetting,
+  SwitchOverTimes,
+  TemplateJsonDecoder,
+}
 
 import java.security.interfaces.ECPrivateKey
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
@@ -195,7 +200,6 @@ class JoiningNodeInitializer(
 
     for {
       dsoPartyId <- getDsoPartyId(initConnection)
-
       // If we're not onboarded yet, this waits for the sponsoring SV
 
       // Register domain with manualConnect=true. Confusingly, this still connects the first time.
@@ -228,8 +232,10 @@ class JoiningNodeInitializer(
       )
 
       _ <-
-        if (config.permissionedSynchronizer && isBootstrapping) {
-          sendOnboardingRequest(svParty, dsoPartyId)
+        if (isBootstrapping) {
+          getPermissionedFlagFromSponsor().flatMap { isPerm =>
+            if (isPerm) sendOnboardingRequest(svParty, dsoPartyId) else Future.unit
+          }
         } else {
           Future.unit
         }
@@ -247,8 +253,10 @@ class JoiningNodeInitializer(
       _ <-
         // even if the participant is initialized, if it doesn't host DSO, we still need to send sendOnboardingRequest
         // however, when dsoPartyIsAuthorized, then we avoid sending sendOnboardingRequest, to account for cases where sponser sv is down.
-        if (config.permissionedSynchronizer && !isBootstrapping && !dsoPartyIsAuthorized)
-          sendOnboardingRequest(svParty, dsoPartyId)
+        if (!isBootstrapping && !dsoPartyIsAuthorized)
+          getPermissionedFlagFromSponsor().flatMap { isPerm =>
+            if (isPerm) sendOnboardingRequest(svParty, dsoPartyId) else Future.unit
+          }
         else Future.unit
 
       _ <-
@@ -373,10 +381,12 @@ class JoiningNodeInitializer(
                 isOnboardedInDsoRules(dsoStore), {
                   for {
                     (joiningConfig, svConnection) <- svConnection
+                    isPerm <- getPermissionedFlagFromSponsor()
                     _ <- withSvStore.startOnboardingWithDsoPartyHosted(
                       dsoAutomation,
                       svConnection,
                       joiningConfig,
+                      isPerm,
                     )
                   } yield ()
                 },
@@ -390,6 +400,7 @@ class JoiningNodeInitializer(
           )
           for {
             (joiningConfig, svConnection) <- svConnection
+            isPerm <- getPermissionedFlagFromSponsor()
             dsoAutomation <- withSvStore
               .startOnboardingWithDsoPartyMigration(
                 initConnection,
@@ -398,6 +409,7 @@ class JoiningNodeInitializer(
                 joiningConfig,
                 packageVersionSupport,
                 decentralizedSynchronizerId,
+                isPerm,
               )
             _ = dsoAutomation.registerLsuTriggers()
           } yield dsoAutomation
@@ -823,9 +835,10 @@ class JoiningNodeInitializer(
         dsoStoreWithIngestion: AppStoreWithIngestion[SvDsoStore],
         svConnection: SvConnection,
         joiningConfig: SvOnboardingConfig.JoinWithKey,
+        permissionedSynchronizer: Boolean,
     ): Future[Unit] = {
       new WithDsoStore(dsoStoreWithIngestion)
-        .startOnboardingWithDsoPartyHosted(svConnection, joiningConfig)
+        .startOnboardingWithDsoPartyHosted(svConnection, joiningConfig, permissionedSynchronizer)
     }
 
     /** A private class to share the dsoStoreWithIngestion across utility methods. */
@@ -837,13 +850,14 @@ class JoiningNodeInitializer(
       def startOnboardingWithDsoPartyHosted(
           svConnection: SvConnection,
           joiningConfig: SvOnboardingConfig.JoinWithKey,
+          permissionedSynchronizer: Boolean,
       ): Future[Unit] = {
         val SvOnboardingConfig.JoinWithKey(name, _, publicKey, privateKey, _) = joiningConfig
         SvUtil.keyPairMatches(publicKey, privateKey) match {
           case Right(privateKey_) =>
             for {
               _ <-
-                if (!config.permissionedSynchronizer) {
+                if (!permissionedSynchronizer) {
                   requestOnboarding(
                     svConnection,
                     name,
@@ -935,6 +949,7 @@ class JoiningNodeInitializer(
         joiningConfig: SvOnboardingConfig.JoinWithKey,
         packageVersionSupport: PackageVersionSupport,
         synchronizerId: SynchronizerId,
+        permissionedSynchronizer: Boolean,
     ): Future[SvDsoAutomationService] = {
       joiningConfig match {
         case SvOnboardingConfig.JoinWithKey(name, _, publicKey, privateKey, _) =>
@@ -948,13 +963,18 @@ class JoiningNodeInitializer(
                   case None =>
                     for {
                       _ <- svStore.domains.waitForDomainConnection(config.domains.global.alias)
-                      _ <- requestOnboarding(
-                        svConnection,
-                        name,
-                        participantId,
-                        publicKey,
-                        privateKey_,
-                      )
+                      _ <-
+                        if (!permissionedSynchronizer) {
+                          requestOnboarding(
+                            svConnection,
+                            name,
+                            participantId,
+                            publicKey,
+                            privateKey_,
+                          )
+                        } else {
+                          Future.unit
+                        }
                       // Wait on the SV store because the DSO party is not yet onboarded.
                       _ <- waitForSvOnboardingConfirmedInSvStore()
                     } yield ()
@@ -1100,6 +1120,20 @@ class JoiningNodeInitializer(
             .withDescription(s"Could not create onboarding token: $error")
             .asRuntimeException()
         )
+    }
+  }
+
+  private def getPermissionedFlagFromSponsor(): Future[Boolean] = {
+    joiningConfig.fold(Future.successful(false)) { conf =>
+      retryProvider.getValueWithRetries(
+        RetryFor.WaitingOnInitDependency,
+        "dso_info_from_sponsor_for_permissioned_flag",
+        "DSO info from sponsoring SV",
+        getDsoInfoFromSponsor(conf, upgradesConfig).map { dsoInfo =>
+          SwitchOverTimes.permissionedSynchronizerScheduled(dsoInfo.dsoRules.payload)
+        },
+        logger,
+      )
     }
   }
 

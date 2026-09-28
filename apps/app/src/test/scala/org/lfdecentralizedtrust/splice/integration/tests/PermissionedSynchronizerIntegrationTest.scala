@@ -40,9 +40,16 @@ class PermissionedSynchronizerIntegrationTest
     EnvironmentDefinition
       .simpleTopology4Svs(this.getClass.getSimpleName)
       .addConfigTransforms((_, config) =>
-        ConfigTransforms.updateAllSvAppConfigs { case (_, c) =>
-          c.copy(permissionedSynchronizer = true)
-        }(config)
+        ConfigTransforms.updateAllSvAppFoundDsoConfigs_(foundDso => {
+          val currentTimes = foundDso.initialSvOperationsSwitchOverTimes.getOrElse(Map.empty)
+          foundDso.copy(
+            initialSvOperationsSwitchOverTimes = Some(
+              currentTimes + (
+                SwitchOverTimes.PermissionedSynchronizer -> com.digitalasset.canton.data.CantonTimestamp.MinValue
+              )
+            )
+          )
+        })(config)
       )
       .addConfigTransforms((_, config) =>
         ConfigTransforms.updateAllValidatorConfigs { case (_, c) =>

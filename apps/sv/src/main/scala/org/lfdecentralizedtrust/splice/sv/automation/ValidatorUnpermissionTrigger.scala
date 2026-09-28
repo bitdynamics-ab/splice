@@ -18,7 +18,7 @@ import org.lfdecentralizedtrust.splice.automation.{
 import org.lfdecentralizedtrust.splice.codegen.java.splice.validatorunpermission.ValidatorUnpermission
 import org.lfdecentralizedtrust.splice.environment.{ParticipantAdminConnection, RetryFor}
 import org.lfdecentralizedtrust.splice.sv.store.SvDsoStore
-import org.lfdecentralizedtrust.splice.util.AssignedContract
+import org.lfdecentralizedtrust.splice.util.{AssignedContract, SwitchOverTimes}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.OptionConverters.*
@@ -54,43 +54,51 @@ class ValidatorUnpermissionTrigger(
         participantId => {
           for {
             dsoRules <- store.getDsoRules()
-            synchronizerId = SynchronizerId.tryFromString(
-              dsoRules.payload.config.decentralizedSynchronizer.activeSynchronizerId
-            )
-
             outcome <-
-              if (payload.revoked) {
-                participantAdminConnection
-                  .ensureParticipantSynchronizerPermissionRemoved(
-                    synchronizerId,
-                    participantId,
+              if (!SwitchOverTimes.permissionedSynchronizerScheduled(dsoRules.payload)) {
+                Future.successful(
+                  TaskSuccess(
+                    "Skipped because permissionedSynchronizer switchover has not occurred"
                   )
-                  .map { _ =>
-                    TaskSuccess(
-                      s"Permanently revoked ParticipantSynchronizerPermission for participant $participantId"
-                    )
-                  }
-              } else {
-                for {
-                  existingMappings <- participantAdminConnection
-                    .listParticipantSynchronizerPermission(
-                      synchronizerId,
-                      participantId.filterString,
-                    )
-
-                  _ <- participantAdminConnection.ensureParticipantSynchronizerPermission(
-                    synchronizerId = synchronizerId,
-                    participantId = participantId,
-                    permission = Submission,
-                    retryFor = RetryFor.Automation,
-                    limits = existingMappings.headOption.flatMap(_.mapping.limits),
-                    loginAfter = payload.loginAfter.toScala
-                      .map(t => CantonTimestamp.assertFromInstant(t)),
-                  )
-                } yield TaskSuccess(
-                  s"Temporarily revoked ParticipantSynchronizerPermission for participant $participantId (loginAfter: ${payload.loginAfter.toScala
-                      .map(t => CantonTimestamp.assertFromInstant(t))})"
                 )
+              } else {
+                val synchronizerId = SynchronizerId.tryFromString(
+                  dsoRules.payload.config.decentralizedSynchronizer.activeSynchronizerId
+                )
+
+                if (payload.revoked) {
+                  participantAdminConnection
+                    .ensureParticipantSynchronizerPermissionRemoved(
+                      synchronizerId,
+                      participantId,
+                    )
+                    .map { _ =>
+                      TaskSuccess(
+                        s"Permanently revoked ParticipantSynchronizerPermission for participant $participantId"
+                      )
+                    }
+                } else {
+                  for {
+                    existingMappings <- participantAdminConnection
+                      .listParticipantSynchronizerPermission(
+                        synchronizerId,
+                        participantId.filterString,
+                      )
+
+                    _ <- participantAdminConnection.ensureParticipantSynchronizerPermission(
+                      synchronizerId = synchronizerId,
+                      participantId = participantId,
+                      permission = Submission,
+                      retryFor = RetryFor.Automation,
+                      limits = existingMappings.headOption.flatMap(_.mapping.limits),
+                      loginAfter = payload.loginAfter.toScala
+                        .map(t => CantonTimestamp.assertFromInstant(t)),
+                    )
+                  } yield TaskSuccess(
+                    s"Temporarily revoked ParticipantSynchronizerPermission for participant $participantId (loginAfter: ${payload.loginAfter.toScala
+                        .map(t => CantonTimestamp.assertFromInstant(t))})"
+                  )
+                }
               }
           } yield outcome
         },
