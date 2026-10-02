@@ -257,7 +257,7 @@ object DarResourcesGenerator {
 
   private def renderDarResource(suffix: String, dar: DarEntry): Seq[String] =
     Seq(
-      s"lazy val ${camel(dar.packageName)}_${suffix} = DarResource(", // lazy avoids JVM 64KB <clinit> method size limit
+      s"lazy val ${camel(dar.packageName)}_${suffix} = DarResource(",
       s"   \"${dar.path}\",",
       s"   \"${dar.packageId}\",",
       s"   PackageMetadata(PackageName.assertFromString(\"${dar.metadata.name}\"), PackageVersion.assertFromString(\"${dar.metadata.version}\"), None),",

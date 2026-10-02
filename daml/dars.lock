@@ -51,8 +51,8 @@ splice-amulet-name-service 0.1.6 a208aab2c4a248ab2eff352bd382f8b3bbadc92464123db
 splice-amulet-name-service 0.1.7 ba7806d9b2d593eac74a050161c54ae1325d170bf175cb66a9c1e5e5ffb88c3d
 splice-amulet-name-service 0.1.8 efeb3f9b2b92e55fac4ec2d6164f95407a01477240c7465e576df4e310f54bd3
 splice-amulet-name-service 0.1.9 f1b5915ad45ded616f43f83c735b7ee158b5eb58abe758a721e50eee19b3e531
-splice-amulet-name-service-test 0.1.30 8a617c2113abe4d06018f02201db6b826af00f398b000a1ecf9f81ccb4f9e39e
-splice-amulet-test 0.1.29 8ae7d389728533fffde6e68dd299bdf826de280c2a5bfc14cc86085bd8fa02b3
+splice-amulet-name-service-test 0.1.31 5d7d167ab9451bf41f5c8b6792d3468a786eeb55817558fe6b9405e034229f4d
+splice-amulet-test 0.1.30 dd3029c2ca5520a71c16e6c97482767db2fea533fbdcedb3d0f84e916a7b445f
 splice-api-featured-app-v1 1.0.0 7804375fe5e4c6d5afe067bd314c42fe0b7d005a1300019c73154dd939da4dda
 splice-api-featured-app-v2 1.0.0 dd22e3e168a8c7fd0313171922dabf1f7a3b131bd9bfc9ff98e606f8c57707ea
 splice-api-reward-assignment-v1 1.0.0 6f7b72361bc2039369651b4195315a2a5849babafec67b3c96e66ea6e560ec35
@@ -103,17 +103,17 @@ splice-dso-governance 0.1.6 4e7653cfbf7ca249de4507aca9cd3b91060e5489042a522c589d
 splice-dso-governance 0.1.7 d406eba1132d464605f4dae3edf8cf5ecbbb34bd8edef0e047e7e526d328718c
 splice-dso-governance 0.1.8 1790a114f83d5f290261fae1e7e46fba75a861a3dd603c6b4ef6b67b49053948
 splice-dso-governance 0.1.9 9ee83bfd872f91e659b8a8439c5b4eaf240bcf6f19698f884d7d7993ab48c401
-splice-dso-governance-test 0.1.37 15b1e3f86d93c59fe8c5cd95184a42f2cf968988bcda900d70efef7e5707ca76
+splice-dso-governance-test 0.1.38 cb5ddadebd08dc6ba8fbbf4a35dd3af84fc3e134b9a13ba14c496420cd415a4b
 splice-test-token-v1 1.0.0 aaa0b576b5a3db49b3a4f7a4710fe6f8ae462aabbde4da89f639eb87fd62e90c
 splice-test-token-v1 1.0.1 da294b5651ed00af8565fd31351d0c1d8778f10393d250e32c9844311f681436
-splice-test-token-v1-test 1.0.4 2c65af3c85cdda54b75819edc90946402cfebb7e1d03586e0ee75247516e1538
+splice-test-token-v1-test 1.0.5 aea7c83076faf8e4a80d39870f606db760d6ee468f713f86baafa8f2f7e20115
 splice-test-token-v2 1.0.0 a38a96b6f46c14c599b2763bc4fc68911a9cada90f89c599a1401e8e3df685e1
 splice-test-token-v2 1.0.1 6f2bddc934eb700ee00afa209eb1d49f861af6401037618f6aa7e6ac02c8e201
-splice-test-token-v2-test 1.0.4 35a6f2de5610624354340af64692cd0af6bd7fea2252d94777a56d2079c23ba0
+splice-test-token-v2-test 1.0.5 f8d42fbb9c38f3272804cd70a60fa8392d17518f08c34756699e7a57bb34d2a5
 splice-token-standard-utils 2.0.0 9a8f41a2b1456d357dee5677565c21b9a5aa45b80f0ed6be469694445dd4f6e1
-splice-token-standard-utils-test 1.0.4 59fbffb0cd70470d55f3f76f129787a4061da3e7663de88db8b1700a534e556a
+splice-token-standard-utils-test 1.0.5 387f7a3f8c3b17a4127325128eab73427058becd6ba38ce25346b3e45a0ad200
 splice-token-standard-v1-test 1.0.19 e40058c8687bb65a31190d7f2a4aa86eb1d19d5fd2063a2d02e46526a78a6428
-splice-token-standard-v2-test 1.0.4 054ce27e36e405fee08af191785b3bb2a54be3f250f04028272dab7781ee6811
+splice-token-standard-v2-test 1.0.5 54719126f501fb21d270010129cff3744e5c392b50e27cd2068728f750fbcd31
 splice-token-test-dummy-holding 0.0.1 1cd171c6c42ab46dc9cf12d80c6111369e00cea5cdf054924b4f26ce94b1ef5b
 splice-token-test-dummy-holding 0.0.2 4f40fb033ef3db89623642c1b494e846097fa32af138b3864a63aa15937a323d
 splice-token-test-dummy-holding 0.0.3 26c72abb5a4b485e58f201021de6f9e525c85863fa115536f768d6ee138ef13e
@@ -125,6 +125,7 @@ splice-token-test-trading-app 1.0.2 88988edeabc5fcea383d5d0a7333c1f71468be4e9e16
 splice-token-test-trading-app 1.0.3 76913ca0dc24309b720e6b0133363f40b30b78433d581d46f4a9cc8b61715eca
 splice-token-test-trading-app-v2 1.0.0 20d42271cbd760c26c08401e4d1eec624458f5b48c73ae44c87c754e35621f5d
 splice-token-test-trading-app-v2 1.0.1 c01d9742db7c7c515dcd8cb2ff4b186c0957bfc39f6020db424b1cc80d08c8e4
+splice-token-test-trading-app-v2 1.0.2 1d9ef1f061b5cfea69208c3e6aa1d6cdb9d2f91fdf24a0cc9a7844d0219e3ce6
 splice-util 0.1.0 0f319b3bcc9a418836d58c86deae25b38d3f018f1b0c117456cd9011cface7f1
 splice-util 0.1.1 00bf3632ca479d56e536096ca23bbc75d15084088ab5d12e4b31d6547d1df351
 splice-util 0.1.2 3eb8f9ff160b782e0bf7ef0351072cfb6f186f086e082b35d9f7a0317e163372
@@ -152,7 +153,7 @@ splice-util-token-standard-wallet 1.0.0 1da198cb7968fa478cfa12aba9fdf128a63a8af6
 splice-util-token-standard-wallet 1.0.1 182892381e4245c39d3126082ec0b41a089edb61e63af518f61eae1f5c9e135a
 splice-util-token-standard-wallet 1.1.0 1215d3ee8f3cb428d062d8708c2deca33c91ff99f5edefa70616646e57f93012
 splice-util-token-standard-wallet 1.1.1 5acc49b7a6a41f6a3edbf9d7f9efae83cb2d97fb0ad67de52b2052922fa1d32d
-splice-util-token-standard-wallet-test 1.0.13 0b8960cd5854bac82e1fa2ae4222708ee5cb985d3946cd45c9467dba52193d67
+splice-util-token-standard-wallet-test 1.0.14 78d1951f083f6a1c603c94f1e292e2f09ddbce9e7c88f0e6ff58a93570b69586
 splice-validator-lifecycle 0.1.0 cef96fac957362f1fc097120bd13686cac7f84fbc8053afa994a1f9214d9570c
 splice-validator-lifecycle 0.1.1 1ddf05c96002914593c929848b786f34c753fb0be07717d1786be177a564aada
 splice-validator-lifecycle 0.1.2 57e2f15f9755db1f00e51c52c319294264a21ad71c6bc1e7cd70db4b164c0aaa
@@ -217,7 +218,7 @@ splice-wallet-payments 0.1.6 6124379528eeb6fa17ecdab15577c29abb33d0c0d34dc5f2680
 splice-wallet-payments 0.1.7 4e3e0d9cdadf80f4bf8f3cd3660d5287c084c9a29f23c901aabce597d72fd467
 splice-wallet-payments 0.1.8 e48ea337ee3335c8bb3206a2501ce947ac1a7bdb1825cee8f28bad64f5a7bc4b
 splice-wallet-payments 0.1.9 7f4e081ad96f2ccded0c053b0cf5ddddae1139dfc3bb89cefcf77ea70f2cecb7
-splice-wallet-test 0.1.30 9109c23442d5dfc1d9fe350fbed146781a2c6dd1e128ebf6577c128035795932
+splice-wallet-test 0.1.31 ce235475f517a6a1c2fba64e5c5dc78df0e55875b526835550ca0706fca20dbc
 splitwell 0.1.0 075c76de553ab88383a7c69de134afa82aacfdf8ea8fcfe8852c4b199c3b2669
 splitwell 0.1.1 ccb1a0215053062202052e1a052f9214da3fdae5253a6d43e2e155ff4f57fe75
 splitwell 0.1.10 d42676a366f7ca7a2409974dd3054aa4d83ab29baa3b2086ad021407b0a1a295
@@ -245,4 +246,4 @@ splitwell 0.1.6 872da0dd7986fd768930f85d6a7310a94a0ef924e7fbb7bb7a4e149f2b5feb74
 splitwell 0.1.7 841d1c9c86b5c8f3a39059459ecd8febedf7703e18f117300bb0ebf4423db096
 splitwell 0.1.8 63b8153a08ceb4bf40d807acc5712372c3eac548c266be4d5e92470b4f655515
 splitwell 0.1.9 b6267905698d2798b9ef171e27d49fb88e052ec0ec0e0675a3a1b275c7d037d4
-splitwell-test 0.1.30 3364b8ad256905d1c286a9ff2ac7f64b3640d84f0362ef99e9b81cf98ccc45db
+splitwell-test 0.1.31 5b63f01ca9b3796c54658588454fb478a02499117bce90e25adba910485aa4a9

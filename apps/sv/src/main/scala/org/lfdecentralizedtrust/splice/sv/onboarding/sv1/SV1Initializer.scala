@@ -11,7 +11,7 @@ import cats.implicits.{
 }
 import cats.syntax.functorFilter.*
 import com.daml.grpc.adapter.ExecutionSequencerFactory
-import com.daml.nonempty.NonEmpty
+import com.digitalasset.nonempty.NonEmpty
 import com.digitalasset.canton.config.RequireTypes.{NonNegativeInt, PositiveInt}
 import com.digitalasset.canton.config.SynchronizerTimeTrackerConfig
 import com.digitalasset.canton.data.CantonTimestamp
@@ -183,6 +183,8 @@ class SV1Initializer(
             config.participantClient.sequencerRequestAmplification.toInternal,
             sequencerConnectionPoolDelays =
               config.participantClient.sequencerConnectionPoolDelays.toInternal,
+            subscriptionLivenessLimits =
+              config.participantClient.subscriptionLivenessLimits.toInternal,
           ),
           psid = Some(psid),
           timeTracker = SynchronizerTimeTrackerConfig(
@@ -586,6 +588,7 @@ class SV1Initializer(
               synchronizerNode.internalSequencerConnection,
               synchronizerNode.mediatorSequencerAmplification.toInternal,
               synchronizerNode.mediatorSequencerConnectionPoolDelays.toInternal,
+              synchronizerNode.mediatorSubscriptionLivenessLimits.toInternal,
             ),
             logger,
           )
