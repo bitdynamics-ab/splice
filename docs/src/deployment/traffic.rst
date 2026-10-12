@@ -210,7 +210,6 @@ Buying traffic with a token standard transfer
 +++++++++++++++++++++++++++++++++++++++++++++
 
 Any party that holds CC can buy extra traffic for any synchronizer member with a standard CC transfer.
-This lets wallets and external parties buy traffic without dedicated support for the ``AmuletRules_BuyMemberTraffic`` choice.
 
 To buy traffic, create a CC transfer with these values:
 
@@ -223,45 +222,44 @@ To buy traffic, create a CC transfer with these values:
 
      cip-128/memo:memberId=<member>&synchronizerId=<synchronizer>&migrationId=<int>
 
-  - ``memberId``: the party id for synchronizer member that receives the traffic, for example ``PAR::...``.
-  - ``synchronizerId``: the ID of the synchronizer. 
+  - ``memberId``: the ID of the synchronizer member that receives the traffic, for example ``PAR::...``.
+  - ``synchronizerId``: the ID of the synchronizer.
   - ``migrationId``: the current migration ID of the synchronizer.
 
-  The memo must start with ``cip-128/memo:`` and contain all three keys in any order.
+  The memo must start with ``cip-128/memo:`` and contain all three keys (in any order).
 
-The transfer completes immediately. It burns the full amount and adds the purchased traffic to the ``MemberTraffic`` contract of the member.
-The purchased traffic in bytes is:
+The transfer completes immediately. It burns the full amount and adds the purchased traffic to the member's traffic balance.
+
+To calculate the amount, get the current CC price in USD and the ``extraTrafficPrice`` in USD per MB
+with the Scan commands in :ref:`traffic_parameters`. The CC amount to spend for a number of bytes is:
 
 .. code-block:: text
 
-   floor(amount × CC price in USD × 1,000,000 / extra traffic price in USD per MB)
+   CC amount = bytes × extraTrafficPrice / 1,000,000 / CC price
 
-For example, at a CC price of 0.50 USD and an extra traffic price of 1 USD/MB, a transfer of 10 CC buys 5,000,000 bytes.
+The purchased traffic in bytes is rounded down:
 
-The CC price and the extra traffic price come from the ``ExternalPartyConfigState`` contract that the transfer references.
-These values can be slightly older than the values on the latest ``OpenMiningRound`` contract.
+.. code-block:: text
+
+   bytes = floor(CC amount × CC price × 1,000,000 / extraTrafficPrice)
+
+The purchased traffic must be at least ``minTopupAmount`` bytes.
+For example, at a CC price of 0.15 USD and an ``extraTrafficPrice`` of 60 USD/MB, a transfer of 100 CC buys 250,000 bytes.
 
 The transfer fails, and burns no CC, if:
 
 - the memo has an incorrect format,
 - the synchronizer is not a synchronizer on which traffic can be bought (error code: ``splice.lfdecentralizedtrust.org/unknown-synchronizer``), or
-- the purchased traffic is less than ``minTopupAmount`` (``splice.lfdecentralizedtrust.org/insufficient-topup-amount``).
+- the purchased traffic is less than ``minTopupAmount`` (error code: ``splice.lfdecentralizedtrust.org/insufficient-topup-amount``).
   Use an amount that buys at least ``minTopupAmount`` bytes.
 
 The ``splice.lfdecentralizedtrust.org/reason`` metadata of the transfer result and of the burn shows the purchased traffic, for example:
 
 .. code-block:: text
 
-   purchased traffic: 5000000 bytes for memberId=PAR::...&synchronizerId=...&migrationId=0
+   purchased traffic: 250000 bytes for memberId=PAR::...&synchronizerId=...&migrationId=0
 
 Traffic purchases with a token standard transfer do not create validator reward coupons.
-
-.. _traffic_topup_alternatives:
-
-Other methods for buying traffic
-++++++++++++++++++++++++++++++++++++++
-
-Configuring other methods for buying traffic, e.g., using third-party services, exceeds the scope of this documentation.
 
 .. _traffic_wasted:
 
