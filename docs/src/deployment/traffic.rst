@@ -222,11 +222,13 @@ To buy traffic, create a CC transfer with these values:
 
      cip-128/memo:memberId=<member>&synchronizerId=<synchronizer>&migrationId=<int>
 
-  - ``memberId``: the ID of the synchronizer member that receives the traffic, for example ``PAR::...``.
-  - ``synchronizerId``: the ID of the synchronizer.
-  - ``migrationId``: the current migration ID of the synchronizer.
+  - ``memberId`` (required): the ID of the synchronizer member that receives the traffic, for example ``PAR::...``.
+  - ``synchronizerId`` (required): the ID of the synchronizer.
+  - ``migrationId`` (required): the current migration ID of the synchronizer.
+  - ``forfeitValidatorRewardCoupon`` (optional): ``true`` or ``false``. The default is ``false``.
+    See :ref:`the execution window <traffic_topup_token_standard_execution_window>`.
 
-  The memo must start with ``cip-128/memo:`` and contain all three keys (in any order).
+  The memo must start with ``cip-128/memo:`` and contain the three required keys (in any order).
 
 The transfer completes immediately. It burns the full amount and adds the purchased traffic to the member's traffic balance.
 
@@ -259,7 +261,11 @@ The ``splice.lfdecentralizedtrust.org/reason`` metadata of the transfer result a
 
    purchased traffic: 250000 bytes for memberId=PAR::...&synchronizerId=...&migrationId=0
 
-Traffic purchases with a token standard transfer do not create validator reward coupons.
+.. _traffic_topup_token_standard_execution_window:
+
+The purchase creates a validator reward coupon for the validator that hosts the sending party.
+Because of this, the transfer must be executed within about 10 minutes after it is prepared.
+If you sign the transaction long before it is executed, add ``&forfeitValidatorRewardCoupon=true`` to the memo to skip the reward coupon.
 
 .. _traffic_wasted:
 
